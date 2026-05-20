@@ -14,6 +14,7 @@ import { VRAMGauge } from './components/VRAMGauge';
 import { GPUFitAdvisor } from './components/GPUFitAdvisor';
 import { DeploymentScriptGenerator } from './components/DeploymentScriptGenerator';
 import { EnvironmentFeasibilityEvaluator } from './components/EnvironmentFeasibilityEvaluator';
+import { MathFormulaConsole } from './components/MathFormulaConsole';
 import { Calculator, Flame, Shuffle, HelpCircle, ArrowRight } from 'lucide-react';
 
 export default function App() {
@@ -275,6 +276,17 @@ export default function App() {
               breakdown={vramBreakdown}
               selectedMode={selectedMode}
               gpuCapacity={selectedGPU.vram}
+            />
+            
+            <MathFormulaConsole
+              selectedModel={selectedModel}
+              selectedPrecision={selectedPrecision}
+              selectedMode={selectedMode}
+              inferenceConfig={inferenceConfig}
+              trainingConfig={trainingConfig}
+              useMLACompression={useMLACompression}
+              isDeepSeekModel={isDeepSeekModel}
+              vramBreakdown={vramBreakdown}
             />
             
             {/* Quick Sizing Documentation / Mini Q&A panel */}
