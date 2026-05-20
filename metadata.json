@@ -1,0 +1,6 @@
+{
+  "name": "LLM GPU VRAM Calculator",
+  "description": "A highly interactive, dynamic developer tool to calculate GPU VRAM requirements for Large Language Model (LLM) training and inference, featuring popular model presets, quantization setups, KV-cache calculations, and GPU configuration mapping.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
