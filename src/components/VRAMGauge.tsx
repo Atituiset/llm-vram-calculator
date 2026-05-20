@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { VRAMBreakdown, CalcMode } from '../types';
+import { VRAMBreakdown, CalcMode, ModelPreset, PrecisionDetails, InferenceConfig, TrainingConfig, GPUType } from '../types';
 import { COMPONENT_IDS } from '../data';
 import { HeartCrack, ShieldAlert, Award, Activity, Database, Sparkles, Binary } from 'lucide-react';
 
@@ -12,12 +12,24 @@ interface VRAMGaugeProps {
   breakdown: VRAMBreakdown;
   selectedMode: CalcMode;
   gpuCapacity: number; // reference capacity (GB)
+  selectedModel?: ModelPreset;
+  selectedPrecision?: PrecisionDetails;
+  inferenceConfig?: InferenceConfig;
+  trainingConfig?: TrainingConfig;
+  selectedGPU?: GPUType;
+  gpuCount?: number;
 }
 
 export const VRAMGauge: React.FC<VRAMGaugeProps> = ({
   breakdown,
   selectedMode,
   gpuCapacity,
+  selectedModel,
+  selectedPrecision,
+  inferenceConfig,
+  trainingConfig,
+  selectedGPU,
+  gpuCount,
 }) => {
   const { modelWeights, kvCache, trainingState, activationMemory, overhead, total } = breakdown;
   
@@ -98,6 +110,88 @@ export const VRAMGauge: React.FC<VRAMGaugeProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Active Selection Details Summary Card */}
+      {(selectedModel && selectedPrecision) && (
+        <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80 grid grid-cols-2 gap-2.5 font-sans">
+          <div className="flex flex-col col-span-2 pb-1.5 border-b border-slate-850">
+            <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-indigo-400" />
+              当前评估配置组合 / ACTIVE SIZING PARAMS
+            </span>
+          </div>
+          
+          <div className="flex flex-col">
+            <span className="text-[9.5px] text-slate-500 uppercase">评估模型物种</span>
+            <span className="text-xs font-semibold text-slate-100 truncate mt-0.5" title={selectedModel.name}>
+              {selectedModel.name} <span className="text-[9.5px] font-mono text-slate-400">({selectedModel.totalParams}B)</span>
+            </span>
+          </div>
+          
+          <div className="flex flex-col">
+            <span className="text-[9.5px] text-slate-400 uppercase">数据计算精度</span>
+            <span className="text-xs font-semibold text-indigo-300 mt-0.5 font-mono">
+              {selectedPrecision.name} ({selectedPrecision.bitsPerWeight}位)
+            </span>
+          </div>
+
+          <div className="flex flex-col">
+            <span className="text-[9.5px] text-slate-400 uppercase">运行算力宿主</span>
+            <span className="text-xs font-semibold text-slate-100 mt-0.5 truncate" title={selectedGPU?.name}>
+              {gpuCount ?? 1}卡 × {selectedGPU?.name || 'GPU'} <span className="font-mono text-[9px] text-slate-400">({gpuCapacity}GB)</span>
+            </span>
+          </div>
+
+          {selectedMode === 'inference' ? (
+            <div className="flex flex-col">
+              <span className="text-[9.5px] text-slate-400 uppercase">推理并发与长度</span>
+              <span className="text-xs font-semibold text-emerald-400 mt-0.5 font-mono">
+                Bsz={inferenceConfig?.batchSize || 1} · SeqL={inferenceConfig?.sequenceLength || 4096}
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-col">
+              <span className="text-[9.5px] text-slate-400 uppercase">训练并发与长度</span>
+              <span className="text-xs font-semibold text-amber-400 mt-0.5 font-mono">
+                Bsz={trainingConfig?.batchSize || 1} · SeqL={trainingConfig?.sequenceLength || 4096} · {trainingConfig?.trainableParamsPercent === 100 ? '全参' : 'LoRA'}
+              </span>
+            </div>
+          )}
+
+          {/* Inline configuration chips */}
+          <div className="col-span-2 flex flex-wrap gap-1.5 mt-1 pt-1.5 border-t border-slate-800/40 text-[9px]">
+            {selectedMode === 'inference' && inferenceConfig && (
+              <>
+                <span className="bg-slate-900/80 px-1.5 py-0.5 rounded border border-slate-800 text-slate-400 font-mono">
+                  KV-Cache: {inferenceConfig.kvCachePrecision.toUpperCase()}
+                </span>
+                <span className={`px-1.5 py-0.5 rounded border font-mono ${
+                  inferenceConfig.chunkPrefillSize && inferenceConfig.chunkPrefillSize !== 'off'
+                    ? 'bg-emerald-950/45 border-emerald-900/60 text-emerald-400'
+                    : 'bg-slate-900/85 border-slate-800 text-slate-500'
+                }`}>
+                  分块预填: {inferenceConfig.chunkPrefillSize && inferenceConfig.chunkPrefillSize !== 'off' ? `${inferenceConfig.chunkPrefillSize} tkn` : 'OFF'}
+                </span>
+                {inferenceConfig.tensorParallelism > 1 && (
+                  <span className="bg-indigo-950/45 border-indigo-900/60 text-indigo-400 px-1.5 py-0.5 rounded border font-mono">
+                    张量并行TP: {inferenceConfig.tensorParallelism}卡
+                  </span>
+                )}
+              </>
+            )}
+            {selectedMode === 'training' && trainingConfig && (
+              <>
+                <span className="bg-slate-900/80 px-1.5 py-0.5 rounded border border-slate-800 text-slate-400 font-mono">
+                  优化器: {trainingConfig.optimizer.toUpperCase()}
+                </span>
+                <span className="bg-indigo-950/45 border-indigo-900/60 text-indigo-400 px-1.5 py-0.5 rounded border font-mono animate-pulse">
+                  激活重算 Checkpoint: On
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Segmented Stack Bar */}
       <div className="flex flex-col gap-1.5 mt-2">

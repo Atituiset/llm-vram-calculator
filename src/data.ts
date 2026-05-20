@@ -29,6 +29,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     numHeads: 32,
     numKVHeads: 8, // Grouped-Query Attention
     hiddenSize: 4096, // d_head = 4096 / 32 = 128
+    maxContext: 131072, // 128k context
     description: 'The standard modern small LLM. Uses Grouped-Query Attention (GQA).',
     defaultPrecisionId: 'fp16'
   },
@@ -41,6 +42,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     numHeads: 64,
     numKVHeads: 8, // GQA
     hiddenSize: 8192, // d_head = 128
+    maxContext: 131072, // 128k context
     description: 'High performance enterprise model. Large size, utilizes GQA structure.',
     defaultPrecisionId: 'fp16'
   },
@@ -53,6 +55,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     numHeads: 128,
     numKVHeads: 8, // GQA
     hiddenSize: 16384, // d_head = 128
+    maxContext: 131072, // 128k context
     description: 'Ultra-large flagship open-weights model by Meta. Massive VRAM footprint.',
     defaultPrecisionId: 'fp16'
   },
@@ -66,6 +69,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     numHeads: 128,
     numKVHeads: 128, // MLA Compression applies
     hiddenSize: 7168, // d_head = 128
+    maxContext: 131072, // 128k context
     description: 'State-of-the-art MoE. Uses Multi-head Latent Attention (MLA) which compresses KV Cache to 1/5th of normal size, and sparse multi-gated expert system.',
     defaultPrecisionId: 'fp8'
   },
@@ -79,6 +83,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     numHeads: 128,
     numKVHeads: 128, // MLA Compression
     hiddenSize: 7168,
+    maxContext: 131072, // 128k context
     description: 'Highly optimized sparse MoE model. Features 284B total parameters with ~37B active parameters and advanced MLA compressed KV caches.',
     defaultPrecisionId: 'fp8'
   },
@@ -91,6 +96,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     numHeads: 28,
     numKVHeads: 4, // GQA
     hiddenSize: 3584, // d_head = 128
+    maxContext: 131072, // 128k context
     description: 'Highly popular versatile multilingual model.',
     defaultPrecisionId: 'fp16'
   },
@@ -103,6 +109,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     numHeads: 40,
     numKVHeads: 8, // GQA
     hiddenSize: 5120, // d_head = 128
+    maxContext: 131072, // 128k context
     description: 'Strong mid-sized model.',
     defaultPrecisionId: 'fp16'
   },
@@ -115,6 +122,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     numHeads: 64,
     numKVHeads: 8, // GQA
     hiddenSize: 8192, // d_head = 128
+    maxContext: 131072, // 128k context
     description: 'Standard dense alternative to LLaMA-70B.',
     defaultPrecisionId: 'fp16'
   },
@@ -127,6 +135,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     numHeads: 16,
     numKVHeads: 8, // GQA (specifically query_heads / kv_heads = 2)
     hiddenSize: 3584, // d_head=256 actually (Gemma 2 uses d_head = 256)
+    maxContext: 8192, // 8k context
     description: 'Advanced small-sized model utilizing GQA and local sliding window attention.',
     defaultPrecisionId: 'fp16'
   },
@@ -139,6 +148,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     numHeads: 32,
     numKVHeads: 16,
     hiddenSize: 4608, // d_head=128
+    maxContext: 8192, // 8k context
     description: 'Google high-efficiency model, outperforms many models twice its size.',
     defaultPrecisionId: 'fp16'
   },
@@ -151,6 +161,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     numHeads: 40,
     numKVHeads: 10,
     hiddenSize: 5120,
+    maxContext: 131072, // 128k context window support
     description: 'Heavy grouping GQA model with highly optimized token processing.',
     defaultPrecisionId: 'fp16'
   }
@@ -362,6 +373,7 @@ export function calculateInferenceVRAM(
     batchSize: number;
     sequenceLength: number;
     kvCachePrecision: 'fp16' | 'fp8' | 'int8' | 'none';
+    chunkPrefillSize?: 'off' | 512 | 1024 | 2048 | 4096;
     systemOverheadGB: number;
     tensorParallelism: number; // For splitting weight VRAM
     useMLACompression?: boolean; // For DeepSeek MLA cache savings
@@ -419,11 +431,15 @@ export function calculateInferenceVRAM(
 
   // 3. Activation Memory
   // Highly batch size & sequence length dependent.
-  // Approximation formula for standard flash attention inference activation is fairly small, roughly:
-  // (32 * batchSize * sequenceLength * hiddenSize * layers) / 1e9 bits, plus some static buffers.
-  // Let's establish a dynamic baseline:
-  const layerActivationGB = (model.hiddenSize * config.batchSize * config.sequenceLength * 2) / 1e9;
-  const activationGB = Math.max(0.5, layerActivationGB * 0.15); // usually around 10-20% of intermediate block sizes during context tracking
+  // Approximation formula for standard flash attention inference activation is fairly small.
+  // Standard full-sequence prefill executes entire sequenceLength context, yielding huge intermediate attention tensors.
+  // Activating Chunked Prefill divides this stage into chunks of size e.g. 512, 1024, 2048, or 4096, restricting peak activation sizes safely.
+  const activeChunkSize = (config.chunkPrefillSize && config.chunkPrefillSize !== 'off') 
+    ? Math.min(config.sequenceLength, config.chunkPrefillSize) 
+    : config.sequenceLength;
+
+  const layerActivationGB = (model.hiddenSize * config.batchSize * activeChunkSize * 2) / 1e9;
+  const activationGB = Math.max(0.4, layerActivationGB * 0.15); // usually around 10-20% of intermediate block sizes during context tracking
 
   // 4. CUDA Workspace & PyTorch/Driver Overhead
   const overhead = config.systemOverheadGB;

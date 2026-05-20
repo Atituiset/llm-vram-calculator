@@ -366,10 +366,14 @@ export const MathFormulaConsole: React.FC<MathFormulaConsoleProps> = ({
                       <>
                         <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-2 font-bold">Inference Activations Approximation</div>
                         <div className="text-base md:text-lg font-semibold tracking-wide py-1 text-amber-300">
-                          VRAM_activation ≈ L_activations × 0.15 GB 
+                          V_act ≈ (Hidden_size × Batch × S_active × 2 × 15%) / 10^9
                         </div>
-                        <div className="text-[10px] text-slate-500 mt-2 font-serif">
-                          * 推理激活值较轻微，主要为 FlashAttention 计算过程中的暂存小 Buffer，通常不超过 0.5 ~ 1.5 GB
+                        <div className="text-[10px] text-slate-400 mt-2 text-left space-y-1.5 border-t border-slate-800 pt-3">
+                          <div>• <strong>当前评估激活限制 active_chunk:</strong> {inferenceConfig.chunkPrefillSize !== 'off' ? `Math.min(SeqLen(${inferenceConfig.sequenceLength}), ChunkSize(${inferenceConfig.chunkPrefillSize}))` : `全序列(${inferenceConfig.sequenceLength})`} = {inferenceConfig.chunkPrefillSize !== 'off' ? Math.min(inferenceConfig.sequenceLength, Number(inferenceConfig.chunkPrefillSize)) : inferenceConfig.sequenceLength} tkn</div>
+                          <div>• <strong>代入算式进行数值演算:</strong> ({hiddenSize} dim × {batch} B × {inferenceConfig.chunkPrefillSize !== 'off' ? Math.min(inferenceConfig.sequenceLength, Number(inferenceConfig.chunkPrefillSize)) : inferenceConfig.sequenceLength} active_tkn × 2) / 10^9 × 0.15 = <strong className="text-amber-400">{vramBreakdown.activationMemory} GB</strong></div>
+                          <div className="text-slate-500 font-sans mt-1 text-[9px] leading-relaxed">
+                            * 注意：未启用分块预填充且运行超长上下文时，前向注意力层计算矩阵尺寸产生的暂存中间激活 VRAM 会发生剧烈峰值暴增；分块预填充 (Chunked Prefill) 则能直接将峰值锁定在预填分块限制的大小！
+                          </div>
                         </div>
                       </>
                     ) : (

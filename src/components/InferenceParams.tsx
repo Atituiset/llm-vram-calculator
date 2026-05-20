@@ -14,6 +14,7 @@ interface InferenceParamsProps {
   useMLACompression: boolean;
   onMLACompressionChange: (useMLA: boolean) => void;
   isDeepSeekModel: boolean;
+  selectedModelMaxContext: number;
 }
 
 export const InferenceParams: React.FC<InferenceParamsProps> = ({
@@ -22,6 +23,7 @@ export const InferenceParams: React.FC<InferenceParamsProps> = ({
   useMLACompression,
   onMLACompressionChange,
   isDeepSeekModel,
+  selectedModelMaxContext,
 }) => {
   const handleChange = (key: keyof InferenceConfig, value: number | string) => {
     onConfigChange({
@@ -78,8 +80,8 @@ export const InferenceParams: React.FC<InferenceParamsProps> = ({
         <div className="flex flex-col gap-2">
           <div className="flex justify-between items-center text-sm">
             <label className="font-semibold text-slate-700 flex items-center gap-1.5">
-              最大上下文大小 / Context Length (s)
-              <HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-emerald-600 cursor-help" title="单次生成流程包含的历史Prompt和新增Token的上限。长上下文(如32k、128k)会带来极其沉重的KV-Cache存储开销。" />
+              评估上下文序列长度 / Active Sequence Length (s)
+              <HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-emerald-600 cursor-help" title="单次生成流程包含的历史Prompt和新增Token的上限。评估长度受模型出厂设计的物理上限约束，长上下文(如32k、128k)会带来极其沉重的KV-Cache存储开销。" />
             </label>
             <span className="font-mono bg-slate-100 px-2 py-0.5 rounded text-sm text-slate-700 font-bold">
               {(config.sequenceLength / 1024).toFixed(0)}k ({config.sequenceLength} tkn)
@@ -89,17 +91,17 @@ export const InferenceParams: React.FC<InferenceParamsProps> = ({
             id="inference-seq-length-slider"
             type="range"
             min="1024"
-            max="131072"
+            max={selectedModelMaxContext}
             step="1024"
-            value={config.sequenceLength}
+            value={config.sequenceLength > selectedModelMaxContext ? selectedModelMaxContext : config.sequenceLength}
             onChange={(e) => handleChange('sequenceLength', parseInt(e.target.value))}
             className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-500"
           />
           <div className="flex justify-between text-[11px] text-slate-400 font-mono">
-            <span>1k (Default)</span>
-            <span>32k (Long Context)</span>
-            <span>64k (Extremely Long)</span>
-            <span>128k (Max Window)</span>
+            <span>1k (起跑)</span>
+            {selectedModelMaxContext > 8192 && <span>32k</span>}
+            {selectedModelMaxContext >= 131072 && <span>64k</span>}
+            <span>物理边界上限: {(selectedModelMaxContext / 1024).toFixed(0)}k</span>
           </div>
         </div>
 
@@ -123,6 +125,37 @@ export const InferenceParams: React.FC<InferenceParamsProps> = ({
                 }`}
               >
                 {mode.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Chunked Prefill Size Selection */}
+        <div className="flex flex-col gap-2">
+          <label className="font-semibold text-slate-700 text-sm flex items-center gap-1.5">
+            分块预填充 / Chunked Prefill Size (c)
+            <HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-emerald-600 cursor-help" title="控制预填充阶段计算激活隐层的最大分块。启用此机制(如1k/2k)能将原本在 prefill 期间极度膨胀的瞬时激活显存锁定，免招在突发长 Prompt 下爆显存(OOM)！" />
+          </label>
+          <div className="grid grid-cols-5 gap-1.5">
+            {([
+              { value: 'off', label: 'OFF' },
+              { value: 512, label: '512' },
+              { value: 1024, label: '1k' },
+              { value: 2048, label: '2k' },
+              { value: 4096, label: '4k' }
+            ] as const).map((opt) => (
+              <button
+                key={opt.value}
+                id={`chunk-prefill-${opt.value}`}
+                type="button"
+                onClick={() => handleChange('chunkPrefillSize', opt.value)}
+                className={`py-2 px-1 text-center font-mono text-xs font-semibold rounded-lg border transition-all ${
+                  config.chunkPrefillSize === opt.value
+                    ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                    : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'
+                }`}
+              >
+                {opt.label}
               </button>
             ))}
           </div>

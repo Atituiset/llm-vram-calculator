@@ -345,7 +345,7 @@ export const EnvironmentFeasibilityEvaluator: React.FC<EnvironmentFeasibilityEva
           {diagnosticVerdict.status === 'error' && <ShieldAlert className="w-6 h-6" />}
         </div>
         
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1.5 w-full">
           <h4 className="text-sm font-bold text-slate-900 flex flex-wrap items-center gap-2">
             当前配置部署可行性诊断报告:
             <span className="font-mono text-indigo-600 bg-white/80 px-2 py-0.5 rounded border border-slate-250 text-xs">
@@ -358,6 +358,93 @@ export const EnvironmentFeasibilityEvaluator: React.FC<EnvironmentFeasibilityEva
           <div className="text-[11px] text-slate-650 leading-relaxed border-t border-slate-300/30 pt-1.5 mt-0.5 font-medium/60">
             <strong>🎯 本地部署优化方案 / Deployment Action Item:</strong> {diagnosticVerdict.action}
           </div>
+
+          {/* Granular collapsible mathematical analysis cause breakdown (collapsed by default) */}
+          <details className="mt-2.5 border border-slate-200/60 rounded-lg overflow-hidden bg-white/70 group">
+            <summary className="text-[11px] font-bold text-slate-700 hover:text-indigo-900 cursor-pointer select-none px-3 py-2 bg-slate-100/50 flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-indigo-950 font-sans">
+                🔍 诊断分析：为什么得出此结论？查看底层显存精细演算
+              </span>
+              <span className="text-[10px] text-indigo-600 font-mono group-open:hidden">点击展开分析 ▾</span>
+              <span className="text-[10px] text-indigo-600 font-mono hidden group-open:inline">点击收缩隐藏 ▴</span>
+            </summary>
+            
+            <div className="p-3.5 space-y-3 text-xs text-slate-600 border-t border-slate-100 leading-relaxed">
+              <div className="p-2.5 bg-indigo-50/20 rounded border border-indigo-100/30">
+                <p className="font-bold text-slate-800 text-[11.5px] mb-1">🧠 MoE模型与全量参数驻留机制说明:</p>
+                <p className="text-[11px] text-slate-600">
+                  对于像 Qwen-MoE-35B 或 DeepSeek 这种混合专家模型(MoE)，虽然每个Token推理时仅激活极少数的活跃参数(例如 3B)，<strong>但为了避免极度严重的 PCIe 总线存取延迟，全部算力卡必须把所有的专家参数 (35B 全量参数) 常驻载入到 GPU HBM 显存中！</strong> 如果动态从主机内存(RAM)热插拔读取专家权重，推理速度将遭遇毁灭性滑坡 0.1 tokens/s。
+                </p>
+              </div>
+
+              <div className="space-y-2 font-sans">
+                <p className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1">
+                  <span>📊 实时动态显存需求精细拆解 / Hardware Math Breakdown:</span>
+                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2 font-mono text-[11px]">
+                  <div className="p-2 bg-slate-50 rounded border border-slate-150">
+                    <span className="text-[9px] text-slate-400 block uppercase">1. 模型权重载入</span>
+                    <strong className="text-slate-800">{currentBreakdown.modelWeights.toFixed(2)} GB</strong>
+                    <span className="text-[9.5px] text-slate-400 block mt-0.5">({selectedPrecision.bpw}-bit精度, TP={envGPUCount})</span>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded border border-slate-150">
+                    <span className="text-[9px] text-slate-400 block uppercase">2. 上下文 KV 缓存</span>
+                    <strong className="text-slate-800">{currentBreakdown.kvCache.toFixed(2)} GB</strong>
+                    <span className="text-[9.5px] text-slate-400 block mt-0.5">(长上下文开销, {inferenceConfig.kvCachePrecision.toUpperCase()}精度)</span>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded border border-slate-150">
+                    <span className="text-[9px] text-slate-400 block uppercase">3. 前向隐层激活</span>
+                    <strong className="text-slate-800">{currentBreakdown.activationMemory.toFixed(2)} GB</strong>
+                    <span className="text-[9.5px] text-slate-400 block mt-0.5">(分块 prefill: {inferenceConfig.chunkPrefillSize || 'off'})</span>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded border border-slate-150">
+                    <span className="text-[9px] text-slate-400 block uppercase">4. 驱动与内核开销</span>
+                    <strong className="text-slate-800">{currentBreakdown.overhead.toFixed(2)} GB</strong>
+                    <span className="text-[9.5px] text-slate-400 block mt-0.5">(CUDA/SGLang 核心保留)</span>
+                  </div>
+                </div>
+
+                <div className="border-t border-dashed border-slate-200 pt-2 flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs">
+                  <span className="text-slate-500">
+                    📈 当前拓扑需要总显存: <strong className="text-slate-900 font-mono">{currentBreakdown.total.toFixed(2)} GB</strong>
+                  </span>
+                  <span className="text-slate-500">
+                    🔌 您的物理环境最大总显存: <strong className="text-slate-900 font-mono">{totalPoolVRAM.toFixed(0)} GB</strong> ({selectedGPU.name} {selectedGPU.vram}G × {envGPUCount}卡)
+                  </span>
+                </div>
+
+                <div className={`p-2 rounded mt-2.5 text-[11px] leading-relaxed ${
+                  diagnosticVerdict.status === 'error' 
+                    ? 'bg-rose-50 border border-rose-100/50 text-rose-800'
+                    : diagnosticVerdict.status === 'warn'
+                    ? 'bg-amber-50 border border-amber-100/55 text-amber-800'
+                    : 'bg-emerald-50 border border-emerald-100/40 text-emerald-800'
+                }`}>
+                  {diagnosticVerdict.status === 'error' && (
+                    <span>
+                      🚨 <strong>溢出主因分析：</strong>
+                      {currentBreakdown.modelWeights > totalPoolVRAM 
+                        ? `静态物理包体过载！模型所需的纯权重空间 (${currentBreakdown.modelWeights.toFixed(1)} GB) 已在根本上击穿您的整组显存容量 (${totalPoolVRAM} GB)。完全无法实例化，必须选用强量化版本(如 INT4, GGUF)或通过租用多卡节点解决。`
+                        : `模型权重虽塞得进，但由于您评估的上下文序列长度极长 (${inferenceConfig.sequenceLength} Tokens)，在首字预填充 (Prefill) 和 KV-Cache 长链路追溯下，额外吞噬了高达 ${currentBreakdown.kvCache.toFixed(1)} GB 的动态显存，从而直接诱发爆显存(OOM)。推荐采取 FP8 KV-Cache 量化或引入 vLLM 分块预填充 (Chunked Prefill) 来截断瞬时隐层计算包。`}
+                    </span>
+                  )}
+                  {diagnosticVerdict.status === 'warn' && (
+                    <span>
+                      ⚠️ <strong>紧邻过载边缘原因：</strong>
+                      虽然在低并发下勉強能够载入启动，但显存使用率已占满高达 {loadPercent.toFixed(0)}%。此时硬件池仅存有极小微幅缓冲。多用户高并发、长轮对话 prompt 灌入或突然增大的批量 (Batch) 输入，会以极高概率瞬时打爆激活显存引发服务崩溃崩溃。强烈建议启用 FP8 降轨存储或减小批大小。
+                    </span>
+                  )}
+                  {diagnosticVerdict.status === 'success' && (
+                    <span>
+                      ✅ <strong>宽绰可行分析：</strong>
+                      配置计算极为完美！总耗显存对物理算力池容量处于 {loadPercent.toFixed(0)}% 的完美健康负载线以下。即使是面对高频动态 Prompt 请求，硬件仍有宽绰的安全显存裕度用于弹性吞吐调度，可毫无顾虑地进行高安全系数生产部署。
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </details>
         </div>
       </div>
 
@@ -367,12 +454,12 @@ export const EnvironmentFeasibilityEvaluator: React.FC<EnvironmentFeasibilityEva
         {/* Sizing filters specifically for the look up matrix */}
         <div className="bg-slate-50 border-b border-slate-200 p-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
           <div className="flex flex-col">
-            <span className="text-xs font-bold text-slate-800 flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
-              2. 开源生态一链检测适配矩阵 / Multi-Model Adaptation Lookup Matrix
+            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-indigo-600 animate-pulse" />
+              2. 开源生态一键检测适配矩阵 / Multi-Model Adaptation Matrix
             </span>
             <p className="text-[10px] text-slate-500 mt-0.5">
-              模拟不同上下文与并发场景，全景探知。<strong>温馨提示：点击任意可用单元格，可直接一键反向加载加载该模型与量化组合至计算器！</strong>
+              横向排查市面主流大模型在您当前选定的物理卡池下的承载能力。
             </p>
           </div>
 
@@ -413,12 +500,31 @@ export const EnvironmentFeasibilityEvaluator: React.FC<EnvironmentFeasibilityEva
             <button
               type="button"
               onClick={syncMatrixToConfig}
-              className="px-2.5 py-1 text-xs bg-indigo-650 hover:bg-indigo-750 text-white rounded font-semibold transition-colors flex items-center gap-1"
+              className="px-2.5 py-1 text-xs bg-indigo-650 hover:bg-indigo-750 text-white rounded font-semibold transition-colors flex items-center gap-1 opacity-90 hover:opacity-100"
               title="将此矩阵参数一键同步至系统真实计算区"
             >
               <ArrowDownUp className="w-3.5 h-3.5" />
               同步全局设定
             </button>
+          </div>
+        </div>
+
+        {/* Dynamic Instructional Banner explaining why we have this matrix */}
+        <div className="bg-gradient-to-r from-indigo-50/40 via-sky-50/10 to-transparent p-4 border-b border-slate-150 text-xs text-slate-600 flex flex-col sm:flex-row items-start gap-3.5 leading-relaxed">
+          <div className="p-2 bg-indigo-600 text-white rounded-lg hidden sm:block shadow-sm">
+            <BookOpen className="w-4 h-4" />
+          </div>
+          <div className="flex-1 space-y-1">
+            <h5 className="font-bold text-slate-900 text-xs flex items-center gap-1">
+              💡 这个矩阵是在帮您解决什么问题？
+            </h5>
+            <p className="text-[11px] text-slate-500">
+              当您挑选了特定的算力芯片组（如当前选定的 <strong className="text-slate-800">{envGPUCount}卡 × {selectedGPU.name}</strong>）后，本组件会自动将市面上全部主流的开源大语言模型在此硬件池上进行<strong>虚拟推演</strong>。这样您能一目了然地知道：在相同显卡配置下，哪些模型的哪些量化精度组合是完美的（<strong>绿色推荐</strong>），哪些运行在崩溃边缘（<strong>黄色吃紧</strong>），哪些又必然爆显存（<strong>红色 blocked</strong>）。
+            </p>
+            <p className="text-[11px] text-slate-500">
+              <strong className="text-indigo-600">💡 快捷联动: </strong>
+              如果您下面看到合适的绿色或黄色格子，<strong>直接点击该单元格</strong>，系统即可将该模型和精度反向一键套用至计算器中，无需您在侧边手动调参。
+            </p>
           </div>
         </div>
 

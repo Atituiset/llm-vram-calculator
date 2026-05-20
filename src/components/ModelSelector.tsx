@@ -62,6 +62,32 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     }
   };
 
+  const parseParamsFromName = (name: string): { total?: number; active?: number } => {
+    const result: { total?: number; active?: number } = {};
+    
+    // Match MoE pattern like "35B-A3B", "35B_A3B", "35B-A3", "35b-a3", "35B-A3.5B"
+    const moeMatch = name.match(/(\d+(?:\.\d+)?)\s*[Bb][-_]A(\d+(?:\.\d+)?)\s*[Bb]?/i);
+    if (moeMatch) {
+      result.total = parseFloat(moeMatch[1]);
+      result.active = parseFloat(moeMatch[2]);
+      return result;
+    }
+    
+    // Match standard B pattern "35B" or "14B"
+    const bMatch = name.match(/(\d+(?:\.\d+)?)\s*[Bb]/i);
+    if (bMatch) {
+      result.total = parseFloat(bMatch[1]);
+    }
+    
+    // Match standalone active pattern like -A3B, _a3, -A2.7
+    const activeMatch = name.match(/[_-]A(\d+(?:\.\d+)?)\s*[Bb]?\b/i);
+    if (activeMatch) {
+      result.active = parseFloat(activeMatch[1]);
+    }
+    
+    return result;
+  };
+
   const parseHFConfig = (config: any, modelId: string, totalParamsMetadata?: number) => {
     // Extract layers
     const numLayers = config.num_hidden_layers ?? config.n_layer ?? config.num_layers ?? config.n_layers ?? 32;
@@ -80,15 +106,36 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     const creator = parts.length > 1 ? parts[0] : 'HuggingFace';
     const shortName = parts.length > 1 ? parts[1] : modelId;
     
+    // Extract max context window from embeddings or parameters
+    let maxContext = config.max_position_embeddings ?? config.max_seq_len ?? config.model_max_length ?? config.seq_length;
+    if (!maxContext) {
+      const lowerId = modelId.toLowerCase();
+      if (lowerId.includes('qwen') || lowerId.includes('35b')) {
+        maxContext = 262144; // 256k tokens
+      } else {
+        maxContext = 131072; // default fallback
+      }
+    } else if (maxContext <= 32768 && modelId.toLowerCase().includes('qwen')) {
+      // Qwen configs often specify max_position_embeddings as 32768 in code, but physical maximum model context extends natively to 262144 (256k)
+      maxContext = 262144;
+    }
+    
     // Fallback / Parse parameters
     let totalParams = 0;
-    if (totalParamsMetadata) {
-      totalParams = totalParamsMetadata / 1e9;
-    } else {
-      // Parse from modelId name (e.g. 8b, 7b)
-      const bMatch = modelId.match(/(\d+(?:\.\d+)?)\s*[Bb]/);
-      if (bMatch) {
-        totalParams = parseFloat(bMatch[1]);
+    let activeParams: number | undefined = undefined;
+
+    // Prereq: Smart name-based parameter parsing
+    const fromName = parseParamsFromName(shortName);
+    if (fromName.total !== undefined) {
+      totalParams = fromName.total;
+    }
+    if (fromName.active !== undefined) {
+      activeParams = fromName.active;
+    }
+
+    if (totalParams === 0) {
+      if (totalParamsMetadata) {
+        totalParams = totalParamsMetadata / 1e9;
       } else if (config.intermediate_size) {
         const intermediateSize = config.intermediate_size;
         const numExperts = config.num_local_experts ?? config.moe_num_experts ?? config.n_experts ?? 1;
@@ -110,14 +157,19 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     
     totalParams = parseFloat(totalParams.toFixed(2));
     
-    // Active parameters
-    let activeParams = totalParams;
-    const numExperts = config.num_local_experts ?? config.moe_num_experts ?? config.n_experts ?? 1;
+    // MoE active parameters fallback if config contains experts keys and not parsed from name
+    const numExperts = config.num_local_experts ?? config.moe_num_experts ?? config.n_experts ?? config.num_shared_experts ?? 1;
     const activeExpertsPerTok = config.num_experts_per_tok ?? config.moe_num_experts_activated ?? config.num_expert_per_tok ?? 1;
     
-    if (numExperts > 1) {
-      const baseRatio = 0.35; // Standard heuristic attention/routing ratio
-      activeParams = totalParams * (baseRatio + (1 - baseRatio) * (activeExpertsPerTok / numExperts));
+    if (activeParams === undefined) {
+      if (numExperts > 1) {
+        const baseRatio = 0.35; // Standard heuristic
+        activeParams = totalParams * (baseRatio + (1 - baseRatio) * (activeExpertsPerTok / numExperts));
+        activeParams = parseFloat(activeParams.toFixed(2));
+      } else {
+        activeParams = undefined;
+      }
+    } else {
       activeParams = parseFloat(activeParams.toFixed(2));
     }
 
@@ -126,12 +178,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       name: shortName,
       creator,
       totalParams,
-      activeParams: numExperts > 1 ? activeParams : undefined,
+      activeParams: (numExperts > 1 || activeParams !== undefined) ? activeParams : undefined,
       numLayers,
       numHeads,
       numKVHeads,
       hiddenSize,
-      description: `从 Hugging Face Hub 极速拉取的实时配置结构。架构类型: ${config.model_type || 'transformer'}。`
+      maxContext,
+      description: `从 Hugging Face Hub 极速拉取的实时配置结构。设计上限: ${(maxContext / 1024).toFixed(0)}k token 极限上下文。架构类型: ${config.model_type || 'transformer'}。`
     };
   };
 
@@ -182,10 +235,22 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   };
 
   const updateCustomField = (key: keyof ModelPreset, value: string | number) => {
-    const updated = {
+    let updated = {
       ...customModelSpecs,
       [key]: value,
     };
+    
+    // Auto-parse parameters if name is changing
+    if (key === 'name' && typeof value === 'string') {
+      const parsed = parseParamsFromName(value);
+      if (parsed.total !== undefined) {
+        updated.totalParams = parsed.total;
+      }
+      if (parsed.active !== undefined) {
+        updated.activeParams = parsed.active;
+      }
+    }
+    
     onCustomSpecsChange(updated);
     if (isCustom) {
       onModelChange(updated);
@@ -376,7 +441,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                   <span className="text-[10px] font-bold text-indigo-800 uppercase tracking-wider block mb-2">
                     🔬 激活模型层数与维度规格:
                   </span>
-                  <div className="grid grid-cols-2 gap-1.5 text-[10px] font-mono">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 text-[10px] font-mono">
                     <div className="p-1 px-1.5 bg-white/70 rounded border border-indigo-100/40">
                       <span className="text-slate-400 text-[8px] uppercase block">Transformer层数</span>
                       <strong className="text-slate-800">{model.numLayers} Layers</strong>
@@ -392,6 +457,10 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                     <div className="p-1 px-1.5 bg-white/70 rounded border border-indigo-100/40">
                       <span className="text-slate-400 text-[8px] uppercase block">缓存头数 (KV)</span>
                       <strong className="text-slate-800">{model.numKVHeads} KV-Heads</strong>
+                    </div>
+                    <div className="p-1 px-1.5 bg-white/70 rounded border border-indigo-100/40 col-span-2 sm:col-span-1">
+                      <span className="text-slate-400 text-[8px] uppercase block">固有最大上下文</span>
+                      <strong className="text-slate-800">{model.maxContext >= 1024 ? `${(model.maxContext / 1024).toFixed(0)}k` : model.maxContext} tkn</strong>
                     </div>
                   </div>
                   <div className="mt-2.5 bg-indigo-500/10 text-[9.5px] leading-relaxed text-indigo-800 p-1.5 px-2.5 rounded-md border border-indigo-100 flex justify-between items-center">
@@ -411,26 +480,85 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
           id="preset-custom"
           type="button"
           onClick={() => handlePresetSelect('custom')}
-          className={`flex flex-col text-left p-4 rounded-xl border transition-all duration-200 sm:col-span-2 ${
+          className={`flex flex-col text-left p-4 rounded-xl border transition-all duration-200 sm:col-span-2 relative overflow-hidden ${
             isCustom
-              ? 'border-indigo-600 bg-indigo-50/40 ring-2 ring-indigo-600/10 shadow-sm'
+              ? 'border-indigo-600 bg-gradient-to-br from-indigo-50/50 to-indigo-50/20 ring-2 ring-indigo-600/20 shadow-md'
               : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
           }`}
         >
-          <div className="flex items-center gap-1.5 justify-between w-full">
-            <span className="flex items-center gap-1.5 font-semibold text-slate-900">
-              <Settings className="w-4 h-4 text-indigo-600 animate-spin" style={{ animationDuration: '12s' }} />
-              自定义配置 / Custom Architecture Spec
+          <div className="flex justify-between items-start gap-2 w-full">
+            <span className="font-semibold text-slate-900 flex items-center gap-1.5 truncate">
+              <Settings className={`w-4 h-4 text-indigo-600 ${isCustom ? 'animate-spin border-indigo-200' : ''}`} style={{ animationDuration: '12s' }} />
+              <span className="truncate">{customModelSpecs.name}</span>
+              {isCustom && (
+                <span className="inline-flex items-center gap-1 text-[9px] font-sans font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse shrink-0">
+                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
+                  已激活选中 / Selected
+                </span>
+              )}
             </span>
-            {isCustom && (
-              <span className="text-[9px] font-mono text-indigo-700 bg-indigo-100 border border-indigo-200 font-bold px-1.5 py-0.5 rounded uppercase tracking-wider animate-pulse">
-                已激活编辑
+            <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100/60 px-2 py-0.5 rounded shrink-0 flex items-center gap-0.5">
+              ★ {customModelSpecs.creator}
+            </span>
+          </div>
+          <div className="text-xs font-mono text-indigo-700 font-bold mt-1.5 flex items-center gap-1.5">
+            <span>{customModelSpecs.totalParams}B params</span>
+            {customModelSpecs.activeParams && customModelSpecs.activeParams < customModelSpecs.totalParams && (
+              <span className="text-amber-700 bg-amber-50 px-1.5 rounded border border-amber-100/50 text-[10px]">
+                MoE (Active: {customModelSpecs.activeParams}B)
               </span>
             )}
+            <span className="text-[9.5px] font-sans text-indigo-600 bg-white border border-indigo-100 px-1.5 rounded">
+              自定义配置 / HF拉取
+            </span>
           </div>
-          <p className="text-xs text-slate-450 mt-1">
-            编辑专属层数、首批注意力宽度和维度大小，可用于评估未公开模型或进行特定架构微调实验。
-          </p>
+          {!isCustom && (
+            <p className="text-xs text-slate-400 mt-2 line-clamp-2">
+              点击此卡片可自定义其姓名、参数、层数和关注头数规格，或使用上方 Hub 接口任意同步开源模型架构。
+            </p>
+          )}
+
+          {/* Collapsible Architecture Details inside the Card (Responsive default expansion) */}
+          {isCustom && (
+            <div className="mt-3.5 pt-3.5 border-t border-indigo-150/60 w-full animate-in fade-in slide-in-from-top-1 duration-200">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold text-indigo-800 uppercase tracking-wider block">
+                  🔬 激活自定义模型层数与维度规格:
+                </span>
+                <span className="text-[9px] font-sans text-indigo-600 bg-indigo-50 border border-indigo-105 px-1.5 rounded font-bold animate-pulse">
+                  🎯 正在计算当前卡片
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 text-[10px] font-mono">
+                <div className="p-1 px-1.5 bg-white/70 rounded border border-indigo-100/40">
+                  <span className="text-slate-400 text-[8px] uppercase block">Transformer层数</span>
+                  <strong className="text-slate-800">{customModelSpecs.numLayers} Layers</strong>
+                </div>
+                <div className="p-1 px-1.5 bg-white/70 rounded border border-indigo-100/40">
+                  <span className="text-slate-400 text-[8px] uppercase block">隐层维度 size</span>
+                  <strong className="text-slate-800">{customModelSpecs.hiddenSize} Dim</strong>
+                </div>
+                <div className="p-1 px-1.5 bg-white/70 rounded border border-indigo-100/40">
+                  <span className="text-slate-400 text-[8px] uppercase block">关注头数 (Q)</span>
+                  <strong className="text-slate-800">{customModelSpecs.numHeads} Q-Heads</strong>
+                </div>
+                <div className="p-1 px-1.5 bg-white/70 rounded border border-indigo-100/40">
+                  <span className="text-slate-400 text-[8px] uppercase block">缓存头数 (KV)</span>
+                  <strong className="text-slate-800">{customModelSpecs.numKVHeads} KV-Heads</strong>
+                </div>
+                <div className="p-1 px-1.5 bg-white/70 rounded border border-indigo-100/40 col-span-2 sm:col-span-1">
+                  <span className="text-slate-400 text-[8px] uppercase block">固有最大上下文</span>
+                  <strong className="text-slate-800">{customModelSpecs.maxContext >= 1024 ? `${(customModelSpecs.maxContext / 1024).toFixed(0)}k` : customModelSpecs.maxContext} tkn</strong>
+                </div>
+              </div>
+              <div className="mt-2.5 bg-indigo-500/10 text-[9.5px] leading-relaxed text-indigo-800 p-1.5 px-2.5 rounded-md border border-indigo-100 flex justify-between items-center">
+                <span>
+                  GQA 比例: <strong>{customModelSpecs.numKVHeads === customModelSpecs.numHeads ? 'MHA 1:1 无衰减' : `GQA 1:${customModelSpecs.numHeads / customModelSpecs.numKVHeads}`}</strong>
+                </span>
+                <span className="font-bold underline">首发精度: 自定义精度</span>
+              </div>
+            </div>
+          )}
         </button>
       </div>
 
@@ -455,6 +583,40 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-4 font-sans text-sm">
+            {/* Custom Model Name */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-slate-600 flex items-center gap-1">
+                自定义模型名称 / Custom Name
+                <HelpCircle className="w-3 h-3 text-slate-400 hover:text-indigo-600 cursor-help" title="定义在上方模型卡片和左下方仪表盘中的模型主干系列名" />
+              </label>
+              <input
+                id="customModelNameInput"
+                type="text"
+                disabled={!isCustom}
+                value={isCustom ? customModelSpecs.name : selectedModel.name}
+                onChange={(e) => updateCustomField('name', e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 disabled:bg-slate-100"
+                placeholder="例如: 我的自定义模型"
+              />
+            </div>
+
+            {/* Custom Creator */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-slate-600 flex items-center gap-1">
+                发布机构或作者 / Creator Team
+                <HelpCircle className="w-3 h-3 text-slate-400 hover:text-indigo-600 cursor-help" title="定义此模型发布的开发团队，例如 Google, Meta, DeepSeek 或 Local 等" />
+              </label>
+              <input
+                id="customModelCreatorInput"
+                type="text"
+                disabled={!isCustom}
+                value={isCustom ? customModelSpecs.creator : selectedModel.creator}
+                onChange={(e) => updateCustomField('creator', e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 disabled:bg-slate-100"
+                placeholder="例如: Local"
+              />
+            </div>
+
             {/* Total Parameter */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-slate-600 flex items-center gap-1">
@@ -568,6 +730,27 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                 min="128"
                 step="128"
               />
+            </div>
+
+            {/* Native Max Context Window */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-slate-600 flex items-center gap-1">
+                固有最大上下文 / Max Context Window
+                <HelpCircle className="w-3 h-3 text-slate-400 hover:text-indigo-600 cursor-help" title="大模型基座物理出厂时能够达到的极限上下文窗口长度（例如 8k 或 128k）。当前的推理运行评估不应由于设置失误而超出此理论阈值。" />
+              </label>
+              <div className="relative">
+                <input
+                  id={`${COMPONENT_IDS.CUSTOM_SPEC}-maxContext`}
+                  type="number"
+                  disabled={!isCustom}
+                  value={isCustom ? customModelSpecs.maxContext : selectedModel.maxContext}
+                  onChange={(e) => updateCustomField('maxContext', parseInt(e.target.value) || 0)}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 disabled:bg-slate-100 disabled:text-slate-500"
+                  min="512"
+                  step="512"
+                />
+                <span className="absolute right-3 top-2 text-xs text-slate-400 font-mono">tkn</span>
+              </div>
             </div>
           </div>
 

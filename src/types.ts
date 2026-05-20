@@ -13,6 +13,7 @@ export interface ModelPreset {
   numHeads: number; // Query heads
   numKVHeads: number; // KV heads (for GQA/MQA representation)
   hiddenSize: number; // model dimension
+  maxContext: number; // Native maximum designer context window (e.g., 8192, 32768, 131072)
   description?: string;
   defaultPrecisionId?: string; // Automatically load default precision format (e.g., 'fp16', 'fp8')
 }
@@ -51,6 +52,7 @@ export interface InferenceConfig {
   batchSize: number;
   sequenceLength: number;
   kvCachePrecision: 'fp16' | 'fp8' | 'int8' | 'none';
+  chunkPrefillSize: 'off' | 512 | 1024 | 2048 | 4096; // Chunked prefill setting to manage peak activation memory
   systemOverheadGB: number; // standard workspace/CUDA context overhead (usually 1-2 GB)
   tensorParallelism: number; // TP degree (number of GPUs)
 }

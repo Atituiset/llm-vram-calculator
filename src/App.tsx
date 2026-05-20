@@ -35,6 +35,7 @@ export default function App() {
     numHeads: 32,
     numKVHeads: 8,
     hiddenSize: 4096,
+    maxContext: 131072, // Default custom max context window
   });
 
   // Precision States
@@ -50,6 +51,20 @@ export default function App() {
         setSelectedPrecision(matchPrecision);
       }
     }
+    
+    // Auto-clamp sequenceLength to fit model physical limitations
+    if (inferenceConfig.sequenceLength > model.maxContext) {
+      setInferenceConfig(prev => ({
+        ...prev,
+        sequenceLength: model.maxContext
+      }));
+    }
+    if (trainingConfig.sequenceLength > model.maxContext) {
+      setTrainingConfig(prev => ({
+        ...prev,
+        sequenceLength: model.maxContext
+      }));
+    }
   };
 
   // DeepSeek MLA compression flag
@@ -60,6 +75,7 @@ export default function App() {
     batchSize: 1,
     sequenceLength: 4096,
     kvCachePrecision: 'fp16',
+    chunkPrefillSize: 'off',
     systemOverheadGB: 2.0,
     tensorParallelism: 1,
   });
@@ -109,6 +125,7 @@ export default function App() {
         batchSize: inferenceConfig.batchSize,
         sequenceLength: inferenceConfig.sequenceLength,
         kvCachePrecision: inferenceConfig.kvCachePrecision,
+        chunkPrefillSize: inferenceConfig.chunkPrefillSize,
         systemOverheadGB: inferenceConfig.systemOverheadGB,
         tensorParallelism: inferenceConfig.tensorParallelism,
         useMLACompression: useMLACompression,
@@ -224,6 +241,7 @@ export default function App() {
                 useMLACompression={useMLACompression}
                 onMLACompressionChange={setUseMLACompression}
                 isDeepSeekModel={isDeepSeekModel}
+                selectedModelMaxContext={selectedModel.maxContext}
               />
             ) : (
               <TrainingParams
@@ -276,6 +294,12 @@ export default function App() {
               breakdown={vramBreakdown}
               selectedMode={selectedMode}
               gpuCapacity={selectedGPU.vram}
+              selectedModel={selectedModel}
+              selectedPrecision={selectedPrecision}
+              inferenceConfig={inferenceConfig}
+              trainingConfig={trainingConfig}
+              selectedGPU={selectedGPU}
+              gpuCount={envGPUCount}
             />
             
             <MathFormulaConsole
