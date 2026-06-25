@@ -4,8 +4,8 @@
  */
 
 import React, { useState } from 'react';
-import { ModelPreset, PrecisionDetails, CalcMode, InferenceConfig, TrainingConfig, VRAMBreakdown } from '../types';
-import { HelpCircle, ChevronRight, Calculator, X, Sparkles, BookOpen, Layers, Settings, ShieldCheck, Database, Zap } from 'lucide-react';
+import { ModelPreset, PrecisionDetails, CalcMode, InferenceConfig, TrainingConfig, VRAMBreakdown, ConcurrencyEstimate, GPUType } from '../types';
+import { HelpCircle, ChevronRight, Calculator, X, Sparkles, BookOpen, Layers, Settings, ShieldCheck, Database, Zap, Users } from 'lucide-react';
 
 interface MathFormulaConsoleProps {
   selectedModel: ModelPreset;
@@ -16,6 +16,8 @@ interface MathFormulaConsoleProps {
   useMLACompression: boolean;
   isDeepSeekModel: boolean;
   vramBreakdown: VRAMBreakdown;
+  selectedGPU: GPUType;
+  concurrencyEstimate: ConcurrencyEstimate | null;
 }
 
 export const MathFormulaConsole: React.FC<MathFormulaConsoleProps> = ({
@@ -26,10 +28,12 @@ export const MathFormulaConsole: React.FC<MathFormulaConsoleProps> = ({
   trainingConfig,
   useMLACompression,
   isDeepSeekModel,
-  vramBreakdown
+  vramBreakdown,
+  selectedGPU,
+  concurrencyEstimate
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'weights' | 'kv' | 'activation' | 'training'>('weights');
+  const [activeTab, setActiveTab] = useState<'weights' | 'kv' | 'activation' | 'concurrency' | 'training'>('weights');
 
   // Math intermediate variables calculation
   const tp = selectedMode === 'inference' ? inferenceConfig.tensorParallelism : trainingConfig.tensorParallelism;
@@ -135,6 +139,18 @@ export const MathFormulaConsole: React.FC<MathFormulaConsoleProps> = ({
                 <Zap className="w-3.5 h-3.5" />
                 3. 动态激活值公式 (Activations)
               </button>
+              {selectedMode === 'inference' && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('concurrency')}
+                  className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 ${
+                    activeTab === 'concurrency' ? 'bg-white border text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  4. 反向并发估算 (Concurrency)
+                </button>
+              )}
               {selectedMode === 'training' && (
                 <button
                   type="button"
@@ -400,6 +416,46 @@ export const MathFormulaConsole: React.FC<MathFormulaConsoleProps> = ({
                         <li><strong>不开启重算 (AC = OFF):</strong> 运行反向传播时，每层网络必须原地开辟约 34 个矩阵单位（17 矩阵的前向状态 + 17 矩阵的反向锁死缓存）保存前向结果。显存随层数和文本呈天文数字上升。</li>
                         <li><strong>开启全重算 (AC = FULL):</strong> 只保留当前微调中正活动的那一两层的前向激活值。等到反向求导时，模型会临时重新跑一遍前向流程把这些数据现场算出来。非常大幅降低显存占用，但系统算力开销将不可避免地平白产生 30%~33% 的阻折，这就是<strong>以计算时间换存储空间</strong>的精髓。</li>
                       </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'concurrency' && selectedMode === 'inference' && concurrencyEstimate && (
+                <div className="flex flex-col gap-5 animate-in fade-in duration-200">
+                  <div className="bg-slate-50 border-l-4 border-purple-500 rounded-r-lg p-4">
+                    <h4 className="text-xs uppercase tracking-wider font-bold text-purple-950 mb-1">
+                      公式：反向并发估算 (Reverse Concurrency)
+                    </h4>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      与正向“给定 batch/seq 算显存”不同，反向并发从引擎实际行为出发：引擎先按 <code>--mem-fraction-static</code> / <code>--gpu-memory-utilization</code> 圈定可用显存池，加载静态权重并预留系统开销后，剩余空间全部作为 KV Cache 蓄水池。用单 Token KV 占用除以蓄水池容量，再按平均每请求 Token 数分摊，即可得到理论最大并发。
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-900 rounded-xl p-5 text-center shadow-inner font-mono text-white border border-slate-800">
+                    <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-2 font-bold">Reverse Concurrency Equation</div>
+                    <div className="text-base md:text-lg font-semibold tracking-wide py-1 text-purple-300">
+                      KV_Pool = GPU_VRAM × memoryFraction − weight − overhead
+                    </div>
+                    <div className="text-base md:text-lg font-semibold tracking-wide py-1 text-purple-300 mt-2">
+                      Max_Tokens = floor(KV_Pool / perTokenKV)
+                    </div>
+                    <div className="text-base md:text-lg font-semibold tracking-wide py-1 text-purple-300 mt-2">
+                      Max_Concurrent = floor(Max_Tokens / avgTokensPerRequest)
+                    </div>
+                  </div>
+
+                  <div className="bg-purple-50/70 border border-purple-100 rounded-xl p-4.5">
+                    <h5 className="text-xs font-bold text-purple-950 flex items-center gap-1 mb-2">
+                      <Calculator className="w-4 h-4 text-purple-600" />
+                      当前实际配置代入演算 (Live Math Run):
+                    </h5>
+                    <div className="font-mono text-xs text-slate-700 space-y-1.5">
+                      <div>1. 单卡可用显存池: <span className="bg-white px-2 py-0.5 rounded border border-purple-100 font-semibold">{selectedGPU?.vram || inferenceConfig.tensorParallelism} GB × {inferenceConfig.memoryFraction} = {((selectedGPU?.vram || 0) * inferenceConfig.memoryFraction).toFixed(2)} GB</span></div>
+                      <div>2. 扣除静态权重与开销后 KV 池: <span className="bg-white px-2 py-0.5 rounded border border-purple-100 font-semibold">{concurrencyEstimate.kvPoolPerGPU_GB.toFixed(2)} GB</span></div>
+                      <div>3. 单 Token KV 占用 (已按 TP={tp} 切分): <span className="bg-white px-2 py-0.5 rounded border border-purple-100 font-semibold">{(concurrencyEstimate.perTokenKV_GB * 1024).toFixed(2)} KB</span></div>
+                      <div>4. 最大容纳 Token 数: <span className="bg-white px-2 py-0.5 rounded border border-purple-100 font-semibold">{concurrencyEstimate.maxTokensTotal.toLocaleString()} tokens</span></div>
+                      <div>5. 按每请求 {inferenceConfig.avgTokensPerRequest.toLocaleString()} Token 计算，最大并发: <span className="bg-white px-2 py-0.5 rounded border border-purple-100 font-semibold"><strong className="text-purple-700">{concurrencyEstimate.maxConcurrentRequests.toLocaleString()} 请求</strong></span></div>
                     </div>
                   </div>
                 </div>

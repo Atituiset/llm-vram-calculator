@@ -4,8 +4,8 @@
  */
 
 import { useState, useMemo } from 'react';
-import { ModelPreset, PrecisionDetails, GPUType, CalcMode, InferenceConfig, TrainingConfig } from './types';
-import { MODEL_PRESETS, PRECISION_OPTS, GPU_PRESETS, calculateInferenceVRAM, calculateTrainingVRAM, COMPONENT_IDS } from './data';
+import { ModelPreset, PrecisionDetails, GPUType, CalcMode, InferenceConfig, TrainingConfig, ConcurrencyEstimate } from './types';
+import { MODEL_PRESETS, PRECISION_OPTS, GPU_PRESETS, calculateInferenceVRAM, calculateTrainingVRAM, estimateConcurrency, COMPONENT_IDS } from './data';
 import { ModelSelector } from './components/ModelSelector';
 import { PrecisionSelector } from './components/PrecisionSelector';
 import { InferenceParams } from './components/InferenceParams';
@@ -15,6 +15,7 @@ import { GPUFitAdvisor } from './components/GPUFitAdvisor';
 import { DeploymentScriptGenerator } from './components/DeploymentScriptGenerator';
 import { EnvironmentFeasibilityEvaluator } from './components/EnvironmentFeasibilityEvaluator';
 import { MathFormulaConsole } from './components/MathFormulaConsole';
+import { ConcurrencyEstimator } from './components/ConcurrencyEstimator';
 import { Calculator, Flame, Shuffle, HelpCircle, ArrowRight } from 'lucide-react';
 
 export default function App() {
@@ -78,6 +79,8 @@ export default function App() {
     chunkPrefillSize: 'off',
     systemOverheadGB: 2.0,
     tensorParallelism: 1,
+    memoryFraction: 0.85,
+    avgTokensPerRequest: 8192,
   });
 
   // Training Settings
@@ -155,6 +158,27 @@ export default function App() {
   const handleGPUTypeSelect = (gpu: GPUType) => {
     setSelectedGPU(gpu);
   };
+
+  // Reverse concurrency estimate: how many requests fit in the KV cache pool
+  const concurrencyEstimate = useMemo(() => {
+    if (selectedMode !== 'inference') {
+      return null;
+    }
+    return estimateConcurrency(
+      selectedModel,
+      selectedPrecision,
+      inferenceConfig,
+      selectedGPU,
+      useMLACompression
+    );
+  }, [
+    selectedMode,
+    selectedModel,
+    selectedPrecision,
+    inferenceConfig,
+    selectedGPU,
+    useMLACompression,
+  ]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans antialiased selection:bg-indigo-600/10 selection:text-indigo-600">
@@ -283,6 +307,7 @@ export default function App() {
                 selectedGPU={selectedGPU}
                 inferenceConfig={inferenceConfig}
                 vramBreakdown={vramBreakdown}
+                concurrencyEstimate={concurrencyEstimate}
               />
             )}
           </div>
@@ -301,7 +326,15 @@ export default function App() {
               selectedGPU={selectedGPU}
               gpuCount={envGPUCount}
             />
-            
+
+            {selectedMode === 'inference' && concurrencyEstimate && (
+              <ConcurrencyEstimator
+                estimate={concurrencyEstimate}
+                selectedGPU={selectedGPU}
+                inferenceConfig={inferenceConfig}
+              />
+            )}
+
             <MathFormulaConsole
               selectedModel={selectedModel}
               selectedPrecision={selectedPrecision}
@@ -311,6 +344,8 @@ export default function App() {
               useMLACompression={useMLACompression}
               isDeepSeekModel={isDeepSeekModel}
               vramBreakdown={vramBreakdown}
+              selectedGPU={selectedGPU}
+              concurrencyEstimate={concurrencyEstimate}
             />
             
             {/* Quick Sizing Documentation / Mini Q&A panel */}

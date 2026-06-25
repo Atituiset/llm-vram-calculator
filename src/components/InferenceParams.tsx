@@ -6,7 +6,7 @@
 import React from 'react';
 import { InferenceConfig } from '../types';
 import { COMPONENT_IDS } from '../data';
-import { HelpCircle, Layers, Group, Sliders } from 'lucide-react';
+import { HelpCircle, Layers, Group, Sliders, Zap } from 'lucide-react';
 
 interface InferenceParamsProps {
   config: InferenceConfig;
@@ -243,6 +243,62 @@ export const InferenceParams: React.FC<InferenceParamsProps> = ({
             </p>
           </div>
         )}
+      </div>
+
+      {/* Reverse Concurrency Estimator Inputs */}
+      <div className="bg-amber-50/30 rounded-xl border border-amber-100 p-5 flex flex-col gap-4 mt-2">
+        <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+          <Zap className="w-4 h-4 text-amber-500" />
+          反向并发估算 / Reverse Concurrency Estimate
+        </h3>
+
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-between items-center text-sm">
+            <label className="font-semibold text-slate-700 flex items-center gap-1.5">
+              显存借用比例 / Memory Fraction
+              <HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-amber-600 cursor-help" title="对应 SGLang --mem-fraction-static / vLLM --gpu-memory-utilization。引擎加载权重后会将剩余空间全部划为 KV Cache 池。" />
+            </label>
+            <span className="font-mono bg-slate-100 px-2 py-0.5 rounded text-sm text-slate-700 font-bold">
+              {(config.memoryFraction * 100).toFixed(0)}%
+            </span>
+          </div>
+          <input
+            id="inference-memory-fraction-slider"
+            type="range"
+            min={0.70}
+            max={0.95}
+            step={0.01}
+            value={config.memoryFraction}
+            onChange={(e) => handleChange('memoryFraction', Math.max(0.70, Math.min(0.95, parseFloat(e.target.value))))}
+            className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-500"
+          />
+          <div className="flex justify-between text-[11px] text-slate-400 font-mono">
+            <span>70% (保守)</span>
+            <span>85% (推荐)</span>
+            <span>95% (激进)</span>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-between items-center text-sm">
+            <label className="font-semibold text-slate-700 flex items-center gap-1.5">
+              单请求平均 Token 数 / Avg Tokens per Request
+              <HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-amber-600 cursor-help" title="输入 + 输出的预期平均长度。用此值反推显存池最多能容纳多少并发请求。" />
+            </label>
+            <span className="font-mono bg-slate-100 px-2 py-0.5 rounded text-sm text-slate-700 font-bold">
+              {config.avgTokensPerRequest.toLocaleString()}
+            </span>
+          </div>
+          <input
+            id="inference-avg-tokens-input"
+            type="number"
+            min={1}
+            step={128}
+            value={config.avgTokensPerRequest}
+            onChange={(e) => handleChange('avgTokensPerRequest', Math.max(1, parseInt(e.target.value, 10) || 1))}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+          />
+        </div>
       </div>
     </div>
   );
