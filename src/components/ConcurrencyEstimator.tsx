@@ -75,11 +75,11 @@ export const ConcurrencyEstimator: React.FC<ConcurrencyEstimatorProps> = ({
         </div>
       </div>
 
-      <div className="text-[11px] text-slate-500 leading-relaxed">
-        以 <strong>{selectedGPU.name}</strong> 单卡 {selectedGPU.vram}GB × {(inferenceConfig.memoryFraction * 100).toFixed(0)}% 可用池，
-        扣除静态权重与系统开销后，剩余空间可缓存约 {estimate.maxTokensTotal.toLocaleString()} 个 Token。
-        按平均每请求 {inferenceConfig.avgTokensPerRequest.toLocaleString()} Token 计算，
-        理论最大并发为 <strong className="text-slate-300">{estimate.maxConcurrentRequests.toLocaleString()}</strong>。
+      <div className="text-[11px] text-slate-400 leading-relaxed">
+        以 <strong className="text-slate-200">{selectedGPU.name}</strong> 单卡 {selectedGPU.vram}GB × {(inferenceConfig.memoryFraction * 100).toFixed(0)}% 可用池，
+        扣除静态权重与系统开销后，剩余空间可缓存约 <strong className="text-slate-200">{estimate.maxTokensTotal.toLocaleString()}</strong> 个 Token。
+        按平均每请求 <strong className="text-slate-200">{inferenceConfig.avgTokensPerRequest.toLocaleString()}</strong> Token 计算，
+        理论最大并发为 <strong className="text-slate-200">{estimate.maxConcurrentRequests.toLocaleString()}</strong>。
       </div>
     </div>
   );

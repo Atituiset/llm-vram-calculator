@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ModelPreset, PrecisionDetails, CalcMode, InferenceConfig, TrainingConfig, VRAMBreakdown, ConcurrencyEstimate, GPUType } from '../types';
 import { HelpCircle, ChevronRight, Calculator, X, Sparkles, BookOpen, Layers, Settings, ShieldCheck, Database, Zap, Users } from 'lucide-react';
 
@@ -34,6 +35,28 @@ export const MathFormulaConsole: React.FC<MathFormulaConsoleProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'weights' | 'kv' | 'activation' | 'concurrency' | 'training'>('weights');
+
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen]);
+
+  // Close modal on Escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleEscape);
+      return () => window.removeEventListener('keydown', handleEscape);
+    }
+  }, [isOpen]);
 
   // Math intermediate variables calculation
   const tp = selectedMode === 'inference' ? inferenceConfig.tensorParallelism : trainingConfig.tensorParallelism;
@@ -80,11 +103,18 @@ export const MathFormulaConsole: React.FC<MathFormulaConsoleProps> = ({
         </span>
       </button>
 
-      {/* Overlay modal container */}
-      {isOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+      {/* Overlay modal container — rendered via portal to escape parent stacking contexts */}
+      {isOpen && createPortal(
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsOpen(false);
+            }
+          }}
+        >
           <div className="bg-white rounded-2xl max-w-4xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            
+
             {/* Modal Header */}
             <div className="bg-slate-50 border-b border-slate-150 p-5 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -534,7 +564,8 @@ export const MathFormulaConsole: React.FC<MathFormulaConsoleProps> = ({
             </div>
 
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
