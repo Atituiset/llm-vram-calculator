@@ -55,6 +55,8 @@ export interface InferenceConfig {
   chunkPrefillSize: 'off' | 512 | 1024 | 2048 | 4096; // Chunked prefill setting to manage peak activation memory
   systemOverheadGB: number; // standard workspace/CUDA context overhead (usually 1-2 GB)
   tensorParallelism: number; // TP degree (number of GPUs)
+  memoryFraction: number; // SGLang --mem-fraction-static / vLLM --gpu-memory-utilization
+  avgTokensPerRequest: number; // average input + output tokens per request for concurrency estimate
 }
 
 export interface TrainingConfig {
@@ -80,4 +82,14 @@ export interface VRAMBreakdown {
   activationMemory: number;   // GB (Estimated based on context, layers, standard parameters)
   overhead: number;           // GB (CUDA context, PyTorch structures, etc.)
   total: number;              // GB
+}
+
+export interface ConcurrencyEstimate {
+  kvPoolPerGPU_GB: number;
+  perTokenKV_GB: number;
+  maxTokensTotal: number;
+  maxConcurrentRequests: number;
+  limitingFactor: 'weight' | 'kv' | 'fit';
+  isFeasible: boolean;
+  message?: string;
 }

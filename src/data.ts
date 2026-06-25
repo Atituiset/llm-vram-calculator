@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ModelPreset, PrecisionMode, PrecisionDetails, GPUType, VRAMBreakdown } from './types';
+import { ModelPreset, PrecisionMode, PrecisionDetails, GPUType, VRAMBreakdown, InferenceConfig, ConcurrencyEstimate } from './types';
 
 export const COMPONENT_IDS = {
   PRESETS: 'presets-section',
@@ -452,6 +452,105 @@ export function calculateInferenceVRAM(
     activationMemory: parseFloat(activationGB.toFixed(2)),
     overhead: parseFloat(overhead.toFixed(2)),
     total: parseFloat(total.toFixed(2))
+  };
+}
+
+/**
+ * Compute KV Cache memory per token per GPU (GB).
+ * Mirrors the KV logic in calculateInferenceVRAM but without batch/seq.
+ */
+export function calculatePerTokenKV(
+  model: ModelPreset,
+  kvCachePrecision: 'fp16' | 'fp8' | 'int8' | 'none',
+  useMLACompression: boolean,
+  tensorParallelism: number
+): number {
+  if (kvCachePrecision === 'none') return 0;
+
+  const tp = Math.max(1, tensorParallelism);
+  const kvBytes = kvCachePrecision === 'fp16' ? 2 : 1;
+  const isDeepSeekWithMLA = (model.id.includes('deepseek') || model.id.includes('r1')) && useMLACompression !== false;
+
+  let rawKVSizeGB = 0;
+
+  if (isDeepSeekWithMLA) {
+    // DeepSeek MLA compresses KV Cache to roughly 4.5 heads of 128 dim.
+    const mlaEffectiveKVHeads = 4.5;
+    const headDim = 128;
+    const totalKeysValues = mlaEffectiveKVHeads * headDim;
+    rawKVSizeGB = (2 * model.numLayers * totalKeysValues * kvBytes) / 1e9;
+  } else {
+    const d_head = model.numHeads > 0 ? (model.hiddenSize / model.numHeads) : 128;
+    const kvHeadsUsed = model.numKVHeads || model.numHeads;
+    rawKVSizeGB = (2 * model.numLayers * kvHeadsUsed * d_head * kvBytes) / 1e9;
+  }
+
+  return rawKVSizeGB / tp;
+}
+
+/**
+ * Reverse concurrency estimator: given a GPU memory pool, compute how many
+ * concurrent requests fit based on KV Cache requirements.
+ */
+export function estimateConcurrency(
+  model: ModelPreset,
+  precision: PrecisionDetails,
+  inferenceConfig: InferenceConfig,
+  selectedGPU: GPUType,
+  useMLACompression: boolean
+): ConcurrencyEstimate {
+  const tp = Math.max(1, inferenceConfig.tensorParallelism);
+
+  const rawWeightsSizeGB = (model.totalParams * (precision.bitsPerWeight / 8)) * precision.overheadFactor;
+  const weightsGB = rawWeightsSizeGB / tp;
+  const overheadGB = inferenceConfig.systemOverheadGB;
+  const usablePoolGB = selectedGPU.vram * inferenceConfig.memoryFraction;
+
+  if (usablePoolGB <= weightsGB + overheadGB) {
+    return {
+      kvPoolPerGPU_GB: 0,
+      perTokenKV_GB: 0,
+      maxTokensTotal: 0,
+      maxConcurrentRequests: 0,
+      limitingFactor: 'weight',
+      isFeasible: false,
+      message: '显存比例过低：静态权重与系统开销已超过可用池 / Memory fraction too low: weights + overhead exceed usable pool',
+    };
+  }
+
+  const kvPoolPerGPU_GB = usablePoolGB - weightsGB - overheadGB;
+  const perTokenKV_GB = calculatePerTokenKV(
+    model,
+    inferenceConfig.kvCachePrecision,
+    useMLACompression,
+    tp
+  );
+
+  if (perTokenKV_GB <= 0) {
+    return {
+      kvPoolPerGPU_GB: parseFloat(kvPoolPerGPU_GB.toFixed(2)),
+      perTokenKV_GB: 0,
+      maxTokensTotal: Number.MAX_SAFE_INTEGER,
+      maxConcurrentRequests: Number.MAX_SAFE_INTEGER,
+      limitingFactor: 'kv',
+      isFeasible: true,
+      message: 'KV Cache 已禁用，并发仅受权重限制 / KV cache disabled, concurrency limited by weights only',
+    };
+  }
+
+  const maxTokensTotal = Math.floor(kvPoolPerGPU_GB / perTokenKV_GB);
+  const maxConcurrentRequests = Math.floor(maxTokensTotal / inferenceConfig.avgTokensPerRequest);
+
+  return {
+    kvPoolPerGPU_GB: parseFloat(kvPoolPerGPU_GB.toFixed(2)),
+    perTokenKV_GB: parseFloat(perTokenKV_GB.toFixed(6)),
+    maxTokensTotal,
+    maxConcurrentRequests,
+    limitingFactor: maxConcurrentRequests > 0 ? 'kv' : 'fit',
+    isFeasible: maxConcurrentRequests > 0,
+    message: maxConcurrentRequests > 0
+      ? undefined
+      : '单请求平均 token 数过大，无法容纳任何并发 / Avg tokens per request too large to fit any concurrency',
   };
 }
 

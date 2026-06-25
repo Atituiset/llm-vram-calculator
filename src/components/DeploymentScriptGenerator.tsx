@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { ModelPreset, PrecisionDetails, GPUType, InferenceConfig, VRAMBreakdown } from '../types';
+import { ModelPreset, PrecisionDetails, GPUType, InferenceConfig, VRAMBreakdown, ConcurrencyEstimate } from '../types';
 import { Terminal, Copy, Check, Info, ShieldAlert, Cpu } from 'lucide-react';
 
 interface DeploymentScriptGeneratorProps {
@@ -16,6 +16,7 @@ interface DeploymentScriptGeneratorProps {
   selectedGPU: GPUType;
   inferenceConfig: InferenceConfig;
   vramBreakdown: VRAMBreakdown;
+  concurrencyEstimate: ConcurrencyEstimate | null;
 }
 
 export const DeploymentScriptGenerator: React.FC<DeploymentScriptGeneratorProps> = ({
@@ -24,6 +25,7 @@ export const DeploymentScriptGenerator: React.FC<DeploymentScriptGeneratorProps>
   selectedGPU,
   inferenceConfig,
   vramBreakdown,
+  concurrencyEstimate,
 }) => {
   const [activeEngine, setActiveEngine] = useState<'sglang' | 'vllm'>('sglang');
   const [copied, setCopied] = useState(false);
@@ -121,6 +123,11 @@ export const DeploymentScriptGenerator: React.FC<DeploymentScriptGeneratorProps>
     // For large MoE like DeepSeek, we need to balance this
     args.push(`  --mem-fraction-static ${recommendedMemoryUtilization}`);
 
+    // Concurrency limit derived from KV cache pool
+    if (concurrencyEstimate?.isFeasible) {
+      args.push(`  --max-running-requests ${concurrencyEstimate.maxConcurrentRequests}`);
+    }
+
     // Trust remote code for custom kernels (especially deepseek MLA/MoE implementations)
     if (selectedModel.id.includes('deepseek') || selectedModel.id.includes('r1')) {
       args.push('  --trust-remote-code');
@@ -169,6 +176,11 @@ export const DeploymentScriptGenerator: React.FC<DeploymentScriptGeneratorProps>
 
     // vLLM Memory ratio
     args.push(`  --gpu-memory-utilization ${recommendedMemoryUtilization}`);
+
+    // Concurrency limit derived from KV cache pool
+    if (concurrencyEstimate?.isFeasible) {
+      args.push(`  --max-num-seqs ${concurrencyEstimate.maxConcurrentRequests}`);
+    }
 
     if (selectedModel.id.includes('deepseek') || selectedModel.id.includes('r1')) {
       args.push('  --trust-remote-code');
@@ -255,14 +267,14 @@ export const DeploymentScriptGenerator: React.FC<DeploymentScriptGeneratorProps>
 
       {/* Configuration Specifications Alerts */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-        <div className="bg-slate-850 border border-slate-800 rounded-xl p-3.5 flex gap-2.5 items-start">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-3.5 flex gap-2.5 items-start">
           <Cpu className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
           <div className="flex flex-col gap-1">
             <span className="font-bold text-slate-200">
               硬件适配建议 / GPU Matching Info
             </span>
             <p className="text-[11px] text-slate-400 leading-normal">
-              使用 <strong>{selectedGPU.name}</strong> ({selectedGPU.vram}GB)。 
+              使用 <strong>{selectedGPU.name}</strong> ({selectedGPU.vram}GB)。
               模型加载加上系统与 KV 缓冲共需 <strong>{vramBreakdown.total.toFixed(1)} GB</strong> 显存。
               {cardsNeeded > 1 ? (
                 <>
@@ -274,11 +286,16 @@ export const DeploymentScriptGenerator: React.FC<DeploymentScriptGeneratorProps>
                 </>
               )}
             </p>
+            {concurrencyEstimate && !concurrencyEstimate.isFeasible && (
+              <p className="text-[11px] text-amber-400 mt-2">
+                {concurrencyEstimate.message}
+              </p>
+            )}
           </div>
         </div>
 
         {/* Dynamic Engine Optimizations advice */}
-        <div className="bg-slate-850 border border-slate-800 rounded-xl p-3.5 flex gap-2.5 items-start">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-3.5 flex gap-2.5 items-start">
           <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
           <div className="flex flex-col gap-1">
             <span className="font-bold text-slate-200">
