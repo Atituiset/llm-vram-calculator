@@ -213,7 +213,7 @@ export const DeploymentScriptGenerator: React.FC<DeploymentScriptGeneratorProps>
             <h3 className="text-base font-bold text-slate-100 flex items-center gap-1.5 leading-snug">
               部署命令生成器 / Deployment Script Generator
             </h3>
-            <p className="text-sm text-slate-200 mt-0.5">
+            <p className="text-sm text-slate-100 mt-0.5">
               根据当前估算的架构规模，自动生成高并发服务端部署指令。
             </p>
           </div>
@@ -227,7 +227,7 @@ export const DeploymentScriptGenerator: React.FC<DeploymentScriptGeneratorProps>
             className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
               activeEngine === 'sglang'
                 ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-200 hover:text-slate-100'
+                : 'text-slate-100 hover:text-slate-100'
             }`}
           >
             SGLang (极速 MLA / MoE)
@@ -238,7 +238,7 @@ export const DeploymentScriptGenerator: React.FC<DeploymentScriptGeneratorProps>
             className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
               activeEngine === 'vllm'
                 ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-200 hover:text-slate-100'
+                : 'text-slate-100 hover:text-slate-100'
             }`}
           >
             vLLM Standard
@@ -247,7 +247,7 @@ export const DeploymentScriptGenerator: React.FC<DeploymentScriptGeneratorProps>
       </div>
 
       {/* Code Display Area */}
-      <div className="relative rounded-xl bg-black/40 border border-slate-800 p-4 font-mono text-[11px] text-slate-200 leading-relaxed overflow-x-auto group">
+      <div className="relative rounded-xl bg-black/40 border border-slate-800 p-4 font-mono text-[11px] text-slate-100 leading-relaxed overflow-x-auto group">
         <button
           type="button"
           onClick={handleCopy}
@@ -270,10 +270,10 @@ export const DeploymentScriptGenerator: React.FC<DeploymentScriptGeneratorProps>
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-3.5 flex gap-2.5 items-start">
           <Cpu className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
           <div className="flex flex-col gap-1">
-            <span className="font-bold text-slate-200">
+            <span className="font-bold text-slate-100">
               硬件适配建议 / GPU Matching Info
             </span>
-            <p className="text-sm text-slate-200 leading-normal">
+            <p className="text-sm text-slate-100 leading-normal">
               使用 <strong className="text-slate-100">{selectedGPU.name}</strong> ({selectedGPU.vram}GB)。
               模型加载加上系统与 KV 缓冲共需 <strong className="text-slate-100">{vramBreakdown.total.toFixed(1)} GB</strong> 显存。
               {cardsNeeded > 1 ? (
@@ -298,10 +298,10 @@ export const DeploymentScriptGenerator: React.FC<DeploymentScriptGeneratorProps>
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-3.5 flex gap-2.5 items-start">
           <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
           <div className="flex flex-col gap-1">
-            <span className="font-bold text-slate-200">
+            <span className="font-bold text-slate-100">
               引擎关键参数释义 / Parameter Insights
             </span>
-            <p className="text-sm text-slate-200 leading-normal">
+            <p className="text-sm text-slate-100 leading-normal">
               {activeEngine === 'sglang' ? (
                 <>
                   <code>--mem-fraction-static {recommendedMemoryUtilization}</code> 会在加载静态模型与框架开销后，将剩余 GPU 空间的约 {(recommendedMemoryUtilization * 100).toFixed(0)}% 全量借调为高速 KV Caches，最大程度保障并发吞吐不溢出越界。
