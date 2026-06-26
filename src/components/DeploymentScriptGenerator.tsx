@@ -227,7 +227,7 @@ export const DeploymentScriptGenerator: React.FC<DeploymentScriptGeneratorProps>
             className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
               activeEngine === 'sglang'
                 ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-450 hover:text-slate-200'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             SGLang (极速 MLA / MoE)
@@ -238,7 +238,7 @@ export const DeploymentScriptGenerator: React.FC<DeploymentScriptGeneratorProps>
             className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
               activeEngine === 'vllm'
                 ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-450 hover:text-slate-200'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             vLLM Standard

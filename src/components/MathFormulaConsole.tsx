@@ -294,7 +294,7 @@ export const MathFormulaConsole: React.FC<MathFormulaConsoleProps> = ({
                       <div className="font-mono text-xs md:text-sm text-emerald-400 py-1 font-semibold">
                         V_kv = (2 × L × H_kv × D_head × B × S × P_bytes) / 10^9 / TP
                       </div>
-                      <div className="text-[10px] text-slate-500 mt-2 font-serif text-left p-1 border-t border-slate-800">
+                      <div className="text-[10px] text-slate-400 mt-2 font-serif text-left p-1 border-t border-slate-800">
                         * GQA (如 Llama3) 仅包含 8 个 KV 对，比 MHA 节约高达 80% 到 85%!
                       </div>
                     </div>
@@ -306,7 +306,7 @@ export const MathFormulaConsole: React.FC<MathFormulaConsoleProps> = ({
                       <div className="font-mono text-xs md:text-sm text-sky-400 py-1 font-semibold">
                         V_kv_mla = (2 × L × 4.5 × 128 × B × S × P_bytes) / 10^9 / TP
                       </div>
-                      <div className="text-[10px] text-slate-500 mt-2 font-serif text-left p-1 border-t border-slate-800">
+                      <div className="text-[10px] text-slate-400 mt-2 font-serif text-left p-1 border-t border-slate-800">
                         * MLA（Multi-head Latent Attention）将 KV 映射投影至仅有 512 维的低秩空间中存储。等效为常规 4.5 个 KV 头！
                       </div>
                     </div>
@@ -511,7 +511,7 @@ export const MathFormulaConsole: React.FC<MathFormulaConsoleProps> = ({
                       <div className="text-sm font-semibold tracking-wide py-1 text-white">
                         V_grad = (P_trainable × 2字节/4字节) / TP
                       </div>
-                      <div className="text-[10px] text-slate-500 text-left mt-2 border-t border-slate-800 p-1 font-serif">
+                      <div className="text-[10px] text-slate-400 text-left mt-2 border-t border-slate-800 p-1 font-serif">
                         * Gradients 与训练位宽一致。混合精度下，使用 FP16 或 BF16 梯度（乘 2 字节系数）。
                       </div>
                     </div>
@@ -523,7 +523,7 @@ export const MathFormulaConsole: React.FC<MathFormulaConsoleProps> = ({
                       <div className="text-sm font-semibold tracking-wide py-1 text-white">
                         V_opt = (P_trainable × K_opt_scaler) / TP
                       </div>
-                      <div className="text-[10px] text-slate-500 text-left mt-2 border-t border-slate-800 p-1 font-serif">
+                      <div className="text-[10px] text-slate-400 text-left mt-2 border-t border-slate-800 p-1 font-serif">
                         * FP32 经典 Adam 优化器存储 1 阶和 2 阶动量（共 8 字节）+ fp32 Master Weights（4 字节）= 12GB 每个十亿参数！使用 8-bit AdamW 可降至 6GB（省 50%）。
                       </div>
                     </div>
