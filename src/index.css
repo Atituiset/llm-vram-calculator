@@ -1,1 +1,34 @@
 @import "tailwindcss";
+
+/* Ensure CJK characters render correctly across platforms */
+body {
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    "Noto Sans SC",
+    "PingFang SC",
+    "Microsoft YaHei",
+    "WenQuanYi Micro Hei",
+    sans-serif;
+}
+
+/* Monospace stacks should also fall back to a CJK-capable mono font */
+code, kbd, pre, .font-mono {
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    "SF Mono",
+    Menlo,
+    Consolas,
+    "Liberation Mono",
+    "Noto Sans Mono CJK SC",
+    "PingFang SC",
+    "Microsoft YaHei",
+    monospace;
+}
